@@ -1,0 +1,35 @@
+# .github/workflows/backend-api-trigger.yml
+name: Backend API Triggered Action
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_data:
+        description: 'JSON payload from the backend API'
+        required: false # Set to true if your backend always sends data
+        type: string
+        default: '{}' # Default empty JSON object if no payload is provided
+
+jobs:
+  process-backend-data:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # Action to check out your repository code
+
+      - name: Display received payload
+        run: |
+          echo "Received payload from backend API:"
+          echo "${{ github.event.inputs.payload_data }}" | jq '.' # Use jq to pretty-print JSON if available
+
+
+      - name: Perform an action based on payload
+        run: |
+          echo "Processing action based on payload..."
+          # Example: Accessing a specific field from the payload
+          # You'd parse the JSON payload here if you need to access specific properties.
+          # For instance, if your payload is '{"action": "deploy", "version": "1.2.3"}'
+          # action_type=$(echo "${{ github.event.inputs.payload_data }}" | jq -r '.action')
+          # echo "Action type: $action_type"
+          echo "Action completed."
