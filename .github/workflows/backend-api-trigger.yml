@@ -60,6 +60,7 @@ jobs:
           
           echo "##[endgroup]" >> "$OUTPUT_FILE"
           cat "$OUTPUT_FILE"
+        continue-on-error: true
 
       - name: Upload diagnostic result
         uses: actions/upload-artifact@v4
