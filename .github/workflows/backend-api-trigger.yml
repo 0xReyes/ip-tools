@@ -12,9 +12,10 @@ on:
         required: true
         type: string
       dispatch_id:
-        description: 'UUID'
+        description: 'UUID for request tracking'
         required: true
         type: string
+
 jobs:
   process-ip-tool:
     runs-on: ubuntu-latest
@@ -23,38 +24,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Execute IP diagnostic tool and save output
+      - name: Execute IP diagnostic tool
         run: |
-          TOOL="${{ github.event.inputs.tool_command }}"
-          TARGET="${{ github.event.inputs.target_host }}"
-          SAFE_NAME=$(echo "$TARGET" | tr -cd '[:alnum:]._-')
-          HIDDEN_DIR=".diagnostic_logs"
-          FILE_PATH="$HIDDEN_DIR/${SAFE_NAME}.txt"
+          TOOL="${{ inputs.tool_command }}"
+          TARGET="${{ inputs.target_host }}"
+          DISPATCH_ID="${{ inputs.dispatch_id }}"
+          OUTPUT_FILE=".diagnostic_logs/${DISPATCH_ID}.txt"
 
-          echo "Running $TOOL for $TARGET"
-
-          mkdir -p "$HIDDEN_DIR"
-
+          echo "Running $TOOL for $TARGET (Dispatch ID: $DISPATCH_ID)"
+          mkdir -p .diagnostic_logs
+          
+          echo "##[group]Run command output" > "$OUTPUT_FILE"
+          
           case "$TOOL" in
             dig)
-              dig "$TARGET" > "$FILE_PATH"
+              dig "$TARGET" >> "$OUTPUT_FILE"
               ;;
             nslookup)
-              nslookup "$TARGET" > "$FILE_PATH"
+              nslookup "$TARGET" >> "$OUTPUT_FILE"
               ;;
             ping)
-              ping -c 4 "$TARGET" > "$FILE_PATH"
+              ping -c 4 "$TARGET" >> "$OUTPUT_FILE"
               ;;
             whois)
-              whois "$TARGET" > "$FILE_PATH"
+              whois "$TARGET" >> "$OUTPUT_FILE"
               ;;
             traceroute)
-              traceroute "$TARGET" > "$FILE_PATH"
+              traceroute "$TARGET" >> "$OUTPUT_FILE"
               ;;
             *)
-              echo "❌ Unsupported tool: $TOOL" > "$FILE_PATH"
+              echo "❌ Unsupported tool: $TOOL" >> "$OUTPUT_FILE"
               exit 1
               ;;
           esac
+          
+          echo "##[endgroup]" >> "$OUTPUT_FILE"
+          cat "$OUTPUT_FILE"
 
-          cat "$FILE_PATH"
+      - name: Upload diagnostic result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ip-tool-result-${{ inputs.dispatch_id }}
+          path: .diagnostic_logs/${{ inputs.dispatch_id }}.txt
