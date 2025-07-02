@@ -1,35 +1,50 @@
-# .github/workflows/backend-api-trigger.yml
 name: Backend API Triggered Action
 
 on:
   workflow_dispatch:
     inputs:
-      payload_data:
-        description: 'JSON payload from the backend API'
-        required: false # Set to true if your backend always sends data
+      tool_command:
+        description: 'IP diagnostic tool to run (dig, nslookup, ping, whois, traceroute)'
+        required: true
         type: string
-        default: '{}' # Default empty JSON object if no payload is provided
+      target_host:
+        description: 'Target domain or IP address'
+        required: true
+        type: string
 
 jobs:
-  process-backend-data:
-    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+  process-ip-tool:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4 # Action to check out your repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Display received payload
+      - name: Execute IP diagnostic tool
         run: |
-          echo "Received payload from backend API:"
-          echo "${{ github.event.inputs.payload_data }}" | jq '.' # Use jq to pretty-print JSON if available
+          TOOL="${{ github.event.inputs.tool_command }}"
+          TARGET="${{ github.event.inputs.target_host }}"
 
+          echo "Running $TOOL for $TARGET"
 
-      - name: Perform an action based on payload
-        run: |
-          echo "Processing action based on payload..."
-          # Example: Accessing a specific field from the payload
-          # You'd parse the JSON payload here if you need to access specific properties.
-          # For instance, if your payload is '{"action": "deploy", "version": "1.2.3"}'
-          # action_type=$(echo "${{ github.event.inputs.payload_data }}" | jq -r '.action')
-          # echo "Action type: $action_type"
-          echo "Action completed."
+          case "$TOOL" in
+            dig)
+              dig "$TARGET"
+              ;;
+            nslookup)
+              nslookup "$TARGET"
+              ;;
+            ping)
+              ping -c 4 "$TARGET"
+              ;;
+            whois)
+              whois "$TARGET"
+              ;;
+            traceroute)
+              traceroute "$TARGET"
+              ;;
+            *)
+              echo "❌ Unsupported tool: $TOOL"
+              exit 1
+              ;;
+          esac
