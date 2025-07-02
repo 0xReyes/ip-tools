@@ -44,7 +44,7 @@ jobs:
               nslookup "$TARGET" >> "$OUTPUT_FILE"
               ;;
             ping)
-              ping -c 4 "$TARGET" >> "$OUTPUT_FILE"
+              ping -c 2 -W 2 "$TARGET" >> "$OUTPUT_FILE"
               ;;
             whois)
               whois "$TARGET" >> "$OUTPUT_FILE"
