@@ -1,170 +1,118 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Layout,
-  Space,
   Input,
   Select,
-  Button,
   Typography,
-  Spin,
-  Alert,
-  Form,
   Card,
+  Form,
   message,
+  Alert,
+  Spin,
 } from 'antd';
-import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
-import { startIpToolJob, getJobStatus } from './service/api'; // Import API functions
-
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  triggerIpToolWorkflow,
+  getLatestRunId,
+  getWorkflowRunStatus,
+} from './service/api';
 
 const { Header, Content, Footer } = Layout;
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 const { Search } = Input;
 
 const queryClient = new QueryClient();
 
-/**
- * Main application component.
- * This component handles the UI for starting IP tool jobs and displaying their status and results.
- */
 function App() {
-  const [form] = Form.useForm(); // Form instance for Ant Design Form
-  const [jobId, setJobId] = useState(null); // State to store the current job ID
-  const [jobStatus, setJobStatus] = useState(null); // State to store the current job status
-  const [jobResult, setJobResult] = useState(null); // State to store the job result
-  const [errorMessage, setErrorMessage] = useState(null); // State to store any error messages
+  const [form] = Form.useForm();
+  const [jobStatus, setJobStatus] = useState(null);
+  const [runId, setRunId] = useState(null);
+  const [result, setResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // Mutation to start the IP tool job using React Query's useMutation hook
-  const startJobMutation = useMutation({
-    mutationFn: startIpToolJob, // The function to call when the mutation is triggered
-    onSuccess: (data) => {
-      // Callback for successful job initiation
-      setJobId(data.jobId);
-      setJobStatus(data.status);
-      setJobResult(null); // Clear previous results when a new job starts
-      setErrorMessage(null); // Clear any previous error messages
-      message.success(`Job ${data.jobId} queued successfully!`); // Ant Design success message
-    },
-    onError: (error) => {
-      // Callback for failed job initiation
-      setErrorMessage(`Failed to start job: ${error.message}`); // Set error message
-      message.error(`Failed to start job: ${error.message}`); // Ant Design error message
-      setJobId(null); // Reset job ID
-      setJobStatus(null); // Reset job status
-      setJobResult(null); // Reset job result
-    },
-  });
-
-  // Query to poll for job status using React Query's useQuery hook
-  const jobStatusQuery = useQuery({
-    queryKey: ['jobStatus', jobId], // Unique key for this query, dependent on jobId
-    queryFn: () => getJobStatus(jobId), // The function to call to fetch job status
-    // Only enable polling if jobId exists and the job is not yet completed or failed
-    enabled: !!jobId && jobStatus !== 'completed' && jobStatus !== 'failed',
-    // refetchInterval determines how often the query will refetch
-    refetchInterval: (query) => {
-      // Stop polling if the job status is completed or failed
-      if (query.state.data?.status === 'completed' || query.state.data?.status === 'failed') {
-        return false; // Stop refetching
+  const pollRunStatus = useCallback(async (runId) => {
+    const interval = setInterval(async () => {
+      try {
+        const run = await getWorkflowRunStatus(runId);
+        setJobStatus(run.status);
+        if (run.status === 'completed') {
+          clearInterval(interval);
+          setResult(run.conclusion);
+          message.success(`Job ${runId} completed with status: ${run.conclusion}`);
+        }
+      } catch (err) {
+        clearInterval(interval);
+        setErrorMessage('Error polling workflow status');
+        setJobStatus('error');
       }
-      return 3000; // Poll every 3 seconds
-    },
-    onSuccess: (data) => {
-      // Callback for successful job status fetch
-      setJobStatus(data.status); // Update job status
-      if (data.status === 'completed') {
-        setJobResult(data.result); // Set job result if completed
-        message.success(`Job ${jobId} completed!`); // Ant Design success message
-      } else if (data.status === 'failed') {
-        setJobResult(data.result || 'Job failed with no specific output.'); // Set result for failed job
-        setErrorMessage(`Job ${jobId} failed.`); // Set error message
-        message.error(`Job ${jobId} failed.`); // Ant Design error message
+    }, 5000);
+  }, []);
+
+  const onFinish = useCallback(async ({ tool, target }) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      await triggerIpToolWorkflow(tool, target);
+      setJobStatus('dispatched');
+      message.success(`${tool} workflow dispatched for ${target}`);
+
+      const latestRunId = await getLatestRunId();
+      if (latestRunId) {
+        setRunId(latestRunId);
+        pollRunStatus(latestRunId);
       }
-    },
-    onError: (error) => {
-      // Callback for error during job status fetching
-      setErrorMessage(`Error fetching job status: ${error.message}`); // Set error message
-      message.error(`Error fetching job status: ${error.message}`); // Ant Design error message
-      setJobStatus('failed'); // Mark job as failed if polling itself errors
-      setJobResult('Could not retrieve job results due to a network error or backend issue.'); // Set a generic error result
-    },
-  });
-
-  /**
-   * Handler for when the form is submitted.
-   * @param {object} values - The form values (tool, target).
-   */
-  const onFinish = (values) => {
-    startJobMutation.mutate(values); // Trigger the mutation to start the job
-  };
-
-  // Determine if any loading state is active (either starting a job or fetching status)
-  const isLoading = startJobMutation.isPending || jobStatusQuery.isFetching;
+    } catch (err) {
+      setErrorMessage(`Failed to dispatch workflow: ${err.message}`);
+      message.error(`Failed to dispatch workflow: ${err.message}`);
+      setJobStatus('error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pollRunStatus]);
 
   return (
-    // Layout component from Ant Design for overall page structure
     <Layout style={{ minHeight: '100vh' }}>
-      {/* Header section */}
       <Header style={{ display: 'flex', alignItems: 'center', padding: '0 24px', backgroundColor: '#001529' }}>
-        <Title level={3} style={{ color: 'white', margin: 0 }}>
-          IP Tool
-        </Title>
+        <Title level={3} style={{ color: 'white', margin: 0 }}>IP Tool</Title>
       </Header>
 
-      {/* Main content area */}
-      <Content style={{ padding: '50px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-        {/* Card for the IP tool input form */}
-        <Card title="Run IP Diagnostic Tool" style={{ marginBottom: 24, borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
+      <Content style={{ padding: '50px', maxWidth: '800px', margin: '0 auto' }}>
+        <Card title="Run IP Diagnostic Tool" style={{ borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
           <Form
-            form={form} // Bind the form instance
-            layout="vertical" // Vertical layout for form items
-            onFinish={onFinish} // Callback when form is submitted
-            initialValues={{ tool: 'dig' }} // Default value for the tool select
+            form={form}
+            layout="vertical"
+            onFinish={onFinish}
+            initialValues={{ tool: 'dig' }}
           >
-            {/* Form item for target host/domain input */}
             <Form.Item
               name="target"
-              label="Target Host/Domain"
-              rules={[{ required: true, message: 'Please enter a target host or domain!' }]}
+              label="Target Host or IP"
+              rules={[{ required: true, message: 'Please enter a target!' }]}
             >
               <Search
                 placeholder="e.g., google.com or 8.8.8.8"
                 enterButton="Run"
                 size="large"
-                onSearch={() => form.submit()} // Trigger form submission on search button click
-                loading={isLoading} // Show loading state on the search button
-                style={{ borderRadius: '4px' }}
+                onSearch={() => form.submit()}
+                loading={isLoading}
               />
             </Form.Item>
 
-            {/* Form item for tool selection */}
             <Form.Item
               name="tool"
               label="Select Tool"
-              rules={[{ required: true, message: 'Please select an IP tool!' }]}
+              rules={[{ required: true, message: 'Please select a tool!' }]}
             >
-              <Select size="large" disabled={isLoading} style={{ borderRadius: '4px' }}>
-                <Select.Option value="dig">dig</Select.Option>
-                <Select.Option value="nslookup">nslookup</Select.Option>
+              <Select size="large" disabled={isLoading}>
+                {['dig', 'nslookup', 'ping', 'whois', 'traceroute'].map(tool => (
+                  <Select.Option key={tool} value={tool}>{tool}</Select.Option>
+                ))}
               </Select>
-            </Form.Item>
-
-            {/* Form item for the submit button */}
-            <Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                size="large"
-                block
-                loading={isLoading}
-                style={{ borderRadius: '4px' }}
-              >
-                Run IP Tool
-              </Button>
             </Form.Item>
           </Form>
         </Card>
 
-        {/* Display error message if any */}
         {errorMessage && (
           <Alert
             message="Error"
@@ -172,65 +120,27 @@ function App() {
             type="error"
             showIcon
             closable
-            onClose={() => setErrorMessage(null)} // Allow closing the alert
-            style={{ marginBottom: 24, borderRadius: '8px' }}
+            onClose={() => setErrorMessage(null)}
+            style={{ marginTop: 24, borderRadius: '8px' }}
           />
         )}
 
-        {/* Display job status and results if a job has been initiated */}
-        {jobId && (
-          <Card title="Job Status" style={{ marginBottom: 24, borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Paragraph>
-                <Text strong>Job ID:</Text> {jobId}
-              </Paragraph>
-              <Paragraph>
-                <Text strong>Status:</Text>{' '}
-                {/* Display job status with appropriate styling and icons */}
-                {jobStatus === 'queued' && <Text type="warning">Queued</Text>}
-                {jobStatus === 'in_progress' && (
-                  <Text type="success"> {/* Changed to success type for in_progress to show green */}
-                    <Spin size="small" /> In Progress...
-                  </Text>
-                )}
-                {jobStatus === 'completed' && <Text type="success">Completed</Text>}
-                {jobStatus === 'failed' && <Text type="danger">Failed</Text>}
-                {jobStatus === null && <Text type="secondary">Waiting for initiation...</Text>}
-              </Paragraph>
-              {/* Display job results if available */}
-              {jobResult && (
-                <>
-                  <Title level={5}>Results:</Title>
-                  <pre
-                    style={{
-                      backgroundColor: '#f5f5f5',
-                      padding: '10px',
-                      borderRadius: '4px',
-                      overflowX: 'auto',
-                      whiteSpace: 'pre-wrap', // Preserve whitespace and wrap long lines
-                      wordBreak: 'break-all', // Break words to prevent overflow
-                      border: '1px solid #e0e0e0',
-                      maxHeight: '300px' // Limit height for long results
-                    }}
-                  >
-                    {jobResult}
-                  </pre>
-                </>
-              )}
-            </Space>
+        {(jobStatus && jobStatus !== 'error') && (
+          <Card title="Workflow Status" style={{ marginTop: 24 }}>
+            <Paragraph>Status: <strong>{jobStatus}</strong></Paragraph>
+            {jobStatus === 'in_progress' && <Spin />}
+            {result && <Paragraph>Result: <strong>{result}</strong></Paragraph>}
           </Card>
         )}
       </Content>
 
-      {/* Footer section */}
-      <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5', padding: '24px 50px' }}>
-        IP Tool Application ©{new Date().getFullYear()} Created by Your Name
+      <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5' }}>
+        IP Tool Application ©{new Date().getFullYear()} Created by Henry Argueta
       </Footer>
     </Layout>
   );
 }
 
-// Wrap the App component with QueryClientProvider to enable React Query
 export default function AppWrapper() {
   return (
     <QueryClientProvider client={queryClient}>
