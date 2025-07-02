@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # - name: Checkout repository
+      #   uses: actions/checkout@v4
 
       - name: Execute IP diagnostic tool
         run: |
@@ -64,5 +64,5 @@ jobs:
       - name: Upload diagnostic result
         uses: actions/upload-artifact@v4
         with:
-          name: ip-tool-result-${{ inputs.dispatch_id }}
+          name: ${{ inputs.dispatch_id }}
           path: .diagnostic_logs/${{ inputs.dispatch_id }}.txt
