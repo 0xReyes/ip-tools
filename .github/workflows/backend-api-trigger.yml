@@ -11,7 +11,10 @@ on:
         description: 'Target domain or IP address'
         required: true
         type: string
-
+      dispatch_id:
+        description: 'UUID'
+        required: true
+        type: string
 jobs:
   process-ip-tool:
     runs-on: ubuntu-latest
@@ -20,31 +23,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Execute IP diagnostic tool
+      - name: Execute IP diagnostic tool and save output
         run: |
           TOOL="${{ github.event.inputs.tool_command }}"
           TARGET="${{ github.event.inputs.target_host }}"
+          SAFE_NAME=$(echo "$TARGET" | tr -cd '[:alnum:]._-')
+          HIDDEN_DIR=".diagnostic_logs"
+          FILE_PATH="$HIDDEN_DIR/${SAFE_NAME}.txt"
 
           echo "Running $TOOL for $TARGET"
 
+          mkdir -p "$HIDDEN_DIR"
+
           case "$TOOL" in
             dig)
-              dig "$TARGET"
+              dig "$TARGET" > "$FILE_PATH"
               ;;
             nslookup)
-              nslookup "$TARGET"
+              nslookup "$TARGET" > "$FILE_PATH"
               ;;
             ping)
-              ping -c 4 "$TARGET"
+              ping -c 4 "$TARGET" > "$FILE_PATH"
               ;;
             whois)
-              whois "$TARGET"
+              whois "$TARGET" > "$FILE_PATH"
               ;;
             traceroute)
-              traceroute "$TARGET"
+              traceroute "$TARGET" > "$FILE_PATH"
               ;;
             *)
-              echo "❌ Unsupported tool: $TOOL"
+              echo "❌ Unsupported tool: $TOOL" > "$FILE_PATH"
               exit 1
               ;;
           esac
+
+          cat "$FILE_PATH"
