@@ -26,4 +26,4 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/0xreyex/ip-tools:network-tools
+          tags: 0xreyex/ip-tools:network-tools
