@@ -23,7 +23,6 @@ jobs:
     steps:
       - name: Execute IP diagnostic tool
         run: |
-          sudo apt-get update && sudo apt-get install -y traceroute
           TOOL="${{ inputs.tool_command }}"
           TARGET="${{ inputs.target_host }}"
           DISPATCH_ID="${{ inputs.dispatch_id }}"
@@ -46,9 +45,6 @@ jobs:
               ;;
             whois)
               whois "$TARGET" >> "$OUTPUT_FILE"
-              ;;
-            traceroute)
-              traceroute -w 1 -m 5 "$TARGET" >> "$OUTPUT_FILE"
               ;;
             *)
               echo "❌ Unsupported tool: $TOOL" >> "$OUTPUT_FILE"
