@@ -27,8 +27,8 @@ const TOOLS = [
 
 function App() {
   const [activeTool, setActiveTool] = useState('ping');
-  const { artifacts, addArtifact } = useStateStore();
-  
+  const { artifacts } = useStateStore();
+
   // Consolidated state
   const [state, setState] = useState({
     target: '',
@@ -81,7 +81,7 @@ function App() {
         isLoading: false
       }));
     }
-  },[output, dispatchId])
+  },[dispatchId])
 
 
   useEffect(() => {
@@ -92,11 +92,11 @@ function App() {
 
       return () => clearTimeout(timer);
     }
-  }, [dispatchId, output]);
+  }, [dispatchId, output, fetchData]);
 
   useEffect(() => {
     resetJobState()
-  }, [activeTool]);
+  }, [activeTool, resetJobState]);
 
 
 
