@@ -1,150 +1,272 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  Layout,
-  Input,
-  Select,
-  Typography,
-  Card,
-  Form,
-  message,
-  Alert,
-  Spin,
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  Layout, Card, Row, Col, Input, Button, Select, Typography, Spin, Alert, message,
+  Divider
 } from 'antd';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  triggerIpToolWorkflow,
-  getLatestRunId,
-  getWorkflowRunStatus,
+import { 
+  RadarChartOutlined, DeploymentUnitOutlined, 
+  GlobalOutlined, DatabaseOutlined, 
+  CopyOutlined, PlayCircleFilled
+} from '@ant-design/icons';
+import { 
+  triggerWorkflowdispatch, 
+  getArtifactByDispatchId,
+  downloadArtifact
 } from './service/api';
+import {useStateStore} from './store/useStateStore';
 
-const { Header, Content, Footer } = Layout;
-const { Title, Paragraph } = Typography;
-const { Search } = Input;
+const { Header, Content } = Layout;
+const { Title, Text } = Typography;
 
-const queryClient = new QueryClient();
+const TOOLS = [
+  { id: 'ping', icon: <RadarChartOutlined />, name: 'Ping' },
+  { id: 'traceroute', icon: <DeploymentUnitOutlined />, name: 'Traceroute' },
+  { id: 'whois', icon: <GlobalOutlined />, name: 'Whois' },
+  { id: 'dig', icon: <DatabaseOutlined />, name: 'Dig' },
+];
 
 function App() {
-  const [form] = Form.useForm();
-  const [jobStatus, setJobStatus] = useState(null);
-  const [runId, setRunId] = useState(null);
-  const [result, setResult] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState(null);
+  const [activeTool, setActiveTool] = useState('ping');
+  const { artifacts, addArtifact } = useStateStore();
+  
+  // Consolidated state
+  const [state, setState] = useState({
+    target: '',
+    isLoading: false,
+    error: null,
+    output: null,
+    dispatchId: null
+  });
+  
+  const { target, isLoading, error, output, dispatchId } = state;
 
-  const pollRunStatus = useCallback(async (runId) => {
-    const interval = setInterval(async () => {
-      try {
-        const run = await getWorkflowRunStatus(runId);
-        setJobStatus(run.status);
-        if (run.status === 'completed') {
-          clearInterval(interval);
-          setResult(run.conclusion);
-          message.success(`Job ${runId} completed with status: ${run.conclusion}`);
-        }
-      } catch (err) {
-        clearInterval(interval);
-        setErrorMessage('Error polling workflow status');
-        setJobStatus('error');
-      }
-    }, 5000);
+  // Reset function
+  const resetJobState = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      isLoading: false,
+      error: null,
+      output: null,
+      dispatchId: null
+    }));
   }, []);
 
-  const onFinish = useCallback(async ({ tool, target }) => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      await triggerIpToolWorkflow(tool, target);
-      setJobStatus('dispatched');
-      message.success(`${tool} workflow dispatched for ${target}`);
+  const fetchData = useCallback(async () => {
+    if (!dispatchId) return;
+    if (dispatchId.length === 0) return;
+    console.log(dispatchId)
 
-      const latestRunId = await getLatestRunId();
-      if (latestRunId) {
-        setRunId(latestRunId);
-        pollRunStatus(latestRunId);
+    try {
+      const response = await getArtifactByDispatchId(dispatchId);
+      console.log('response', response)
+
+      if (response.length > 0){
+        const { download_url } = response[0];
+        const files = await downloadArtifact(download_url);
+        if (files[`${dispatchId}.txt`]){
+          const content = files[`${dispatchId}.txt`];
+          console.log('content', content)
+          setState(prev => ({...prev, output: content}));
+        }
       }
-    } catch (err) {
-      setErrorMessage(`Failed to dispatch workflow: ${err.message}`);
-      message.error(`Failed to dispatch workflow: ${err.message}`);
-      setJobStatus('error');
+    } catch (error) {
+      console.log('error fetchdata', error)
+      setState(prev => ({
+        ...prev,
+        error: error.message
+      }));
     } finally {
-      setIsLoading(false);
+      setState(prev => ({
+        ...prev,
+        isLoading: false
+      }));
     }
-  }, [pollRunStatus]);
+  },[output, dispatchId])
+
+
+  useEffect(() => {
+    if (dispatchId?.length > 0 && !output){
+      const timer = setTimeout(() => {
+        fetchData()
+      }, 25000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [dispatchId, output]);
+
+  useEffect(() => {
+    resetJobState()
+  }, [activeTool]);
+
+
+
+  const runDiagnostic = useCallback(async () => {
+    if (!target) return;
+    
+    try {
+      resetJobState();
+      setState(prev => ({ ...prev, isLoading: true }));
+      
+      // Check cache first
+      const cacheKey = `${activeTool}-${target}`;
+      if (artifacts[cacheKey]) {
+        setState(prev => ({
+          ...prev,
+          output: artifacts[cacheKey],
+          isLoading: false
+        }));
+      }
+
+      // Trigger workflow
+      console.log(activeTool, target)
+      const newDispatchId = await triggerWorkflowdispatch(activeTool, target);
+      setState(prev => ({
+        ...prev,
+        dispatchId: newDispatchId,
+        isLoading: true
+      }));
+      message.info('Diagnostic started...');
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        error: err.message,
+        isLoading: false
+      }));
+    }
+  }, [activeTool, target, artifacts, resetJobState]);
+
+  // Memoized results rendering
+  const renderResults = useMemo(() => {
+    if (!output && !isLoading && !error) return null;
+    
+    return (
+      <Card 
+        title={`${activeTool.toUpperCase()} Results for ${target}`}
+        extra={output && <Button icon={<CopyOutlined />} onClick={() => 
+          navigator.clipboard.writeText(output).then(() => message.success('Copied to clipboard!'))
+        }>Copy</Button>}
+        style={{ margin: '24px 0' }}
+      >
+        {error ? (
+          <Alert
+            message="Diagnostic Failed"
+            description={error}
+            type="error"
+            showIcon
+          />
+        ) : (
+          <>
+            {isLoading && (
+              <div style={{ textAlign: 'center', padding: 24 }}>
+                <Spin spinning={true} tip="Running diagnostic..." size="large">
+                  <div style={{ minHeight: 150 }} />
+                </Spin>
+              </div>
+            )}
+            {output && (
+              <pre style={{ 
+                background: '#f6f8fa', 
+                padding: 16, 
+                borderRadius: 4,
+                maxHeight: 400,
+                overflow: 'auto'
+              }}>
+                <code>{output}</code>
+              </pre>
+            )}
+          </>
+        )}
+      </Card>
+    );
+  }, [output, isLoading, error, activeTool, target]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', padding: '0 24px', backgroundColor: '#001529' }}>
-        <Title level={3} style={{ color: 'white', margin: 0 }}>IP Tool</Title>
+      <Header style={{ background: '#1890ff', padding: '0 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <DeploymentUnitOutlined style={{ fontSize: 24, color: 'white', marginRight: 16 }} />
+          <Title level={3} style={{ color: 'white', margin: 0 }}>Network Tools</Title>
+        </div>
       </Header>
 
-      <Content style={{ padding: '50px', maxWidth: '800px', margin: '0 auto' }}>
-        <Card title="Run IP Diagnostic Tool" style={{ borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={onFinish}
-            initialValues={{ tool: 'dig' }}
-          >
-            <Form.Item
-              name="target"
-              label="Target Host or IP"
-              rules={[{ required: true, message: 'Please enter a target!' }]}
-            >
-              <Search
-                placeholder="e.g., google.com or 8.8.8.8"
-                enterButton="Run"
-                size="large"
-                onSearch={() => form.submit()}
+      <Content style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
+        <Card title="Run Diagnostic" style={{ marginBottom: 24 }}>
+          <Row gutter={16} align="bottom">
+            <Col flex="auto">
+                <Select
+                  value={activeTool}
+                  displayName={activeTool}
+                  onChange={setActiveTool}
+                  style={{ width: '100%', marginTop: 8 }}
+                  disabled={isLoading}
+                >
+                  {TOOLS.map(tool => (
+                    <Select.Option key={tool.id} value={tool.id}>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        {tool.icon}
+                        <Text style={{ marginLeft: 8 }}>{tool.name}</Text>
+                      </div>
+                    </Select.Option>
+                  ))}
+                </Select>
+                <Divider/>
+                <Input 
+                  placeholder="e.g., google.com or 8.8.8.8"
+                  value={target}
+                  addonBefore={"Target"}
+                  onChange={e => setState(prev => ({ ...prev, target: e.target.value }))}
+                  onPressEnter={runDiagnostic}
+                  style={{ marginTop: 8 }}
+                  disabled={isLoading}
+                />
+            </Col>
+            <Col>
+              <Button 
+                type="primary" 
+                icon={<PlayCircleFilled />}
+                onClick={runDiagnostic}
                 loading={isLoading}
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="tool"
-              label="Select Tool"
-              rules={[{ required: true, message: 'Please select a tool!' }]}
-            >
-              <Select size="large" disabled={isLoading}>
-                {['dig', 'nslookup', 'ping', 'whois', 'traceroute'].map(tool => (
-                  <Select.Option key={tool} value={tool}>{tool}</Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Form>
+                disabled={!target}
+              >
+                Run
+              </Button>
+            </Col>
+          </Row>
+          
+          {artifacts[`${activeTool}-${target}`] && !isLoading && !output && !error && (
+            <Alert
+              message="Cached results available"
+              type="info"
+              showIcon
+              style={{ marginTop: 16 }}
+            />
+          )}
         </Card>
 
-        {errorMessage && (
-          <Alert
-            message="Error"
-            description={errorMessage}
-            type="error"
-            showIcon
-            closable
-            onClose={() => setErrorMessage(null)}
-            style={{ marginTop: 24, borderRadius: '8px' }}
-          />
-        )}
+        {renderResults}
 
-        {(jobStatus && jobStatus !== 'error') && (
-          <Card title="Workflow Status" style={{ marginTop: 24 }}>
-            <Paragraph>Status: <strong>{jobStatus}</strong></Paragraph>
-            {jobStatus === 'in_progress' && <Spin />}
-            {result && <Paragraph>Result: <strong>{result}</strong></Paragraph>}
-          </Card>
-        )}
+        <div style={{ marginTop: 24 }}>
+          <Title level={4} style={{ marginBottom: 16 }}>Available Tools</Title>
+          <Row gutter={16}>
+            {TOOLS.map(tool => (
+              <Col xs={24} sm={12} key={tool.id}>
+                <Card 
+                  hoverable
+                  onClick={() => !isLoading && setActiveTool(tool.id)}
+                  style={{ textAlign: 'center', cursor: 'pointer', marginBottom: 16 }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>
+                    {tool.icon}
+                  </div>
+                  <Text strong>{tool.name}</Text>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </div>
       </Content>
-
-      <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5' }}>
-        IP Tool Application ©{new Date().getFullYear()} Created by Henry Argueta
-      </Footer>
     </Layout>
   );
 }
 
-export default function AppWrapper() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  );
-}
+export default App;

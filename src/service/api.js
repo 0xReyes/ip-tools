@@ -1,50 +1,98 @@
-import axios from 'axios';
+// src/service/api.js
+import axios from 'axios'
+import JSZip from 'jszip';
+import { v4 as uuidv4 } from "uuid";
 
-const API_BASE_URL = 'https://utils-api.onrender.com/api.github.com';
+const API_BASE_URL = window.API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "https://github-utils-api.onrender.com/api.github.com";
+const OWNER = "0xReyes";
+const REPO = "ip-tools";
+const WORKFLOW_FILENAME = "backend-api-trigger.yml";
 
-/**
- * Trigger a GitHub Actions workflow for IP diagnostics via proxy.
- */
-export const triggerIpToolWorkflow = async (tool, target) => {
-  const workflowFilename = 'backend-api-trigger.yml';
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Accept': 'application/vnd.github.v3+json',
+  }
+});
+
+export const triggerWorkflowdispatch = async (tool, target) => {
+  const dispatch_id = uuidv4();
   const payload = {
-    ref: 'main',
+    ref: "main",
     inputs: {
       tool_command: tool,
       target_host: target,
+      dispatch_id,
     },
   };
 
-  const response = await axios.post(
-    `${API_BASE_URL}/repos/0xreyes/ip-tools/actions/workflows/${workflowFilename}/dispatches`,
-    payload,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+  const url = `/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILENAME}/dispatches`;
+
+  try {
+    const response = await api.post(url, payload);
+    if (response.status !== 204) {
+      throw new Error(`Unexpected response status: ${response.status}`);
     }
-  );
-
-  return response.data;
+    console.log('dispatch_id', dispatch_id)
+    return dispatch_id;
+  } catch (error) {
+    console.error("Error triggering workflow:", error.response?.data || error.message);
+    throw new Error(`Failed to trigger workflow: ${error.message}`);
+  }
 };
 
-/**
- * Fetch the most recent workflow run ID for the given workflow.
- */
-export const getLatestRunId = async () => {
-  const response = await axios.get(
-    `${API_BASE_URL}/repos/0xreyes/ip-tools/actions/workflows/backend-api-trigger.yml/runs?per_page=1`
-  );
-  const runId = response.data?.workflow_runs?.[0]?.id;
-  return runId;
+export const getArtifacts = async () => {
+  const url = `/repos/${OWNER}/${REPO}/actions/artifacts`;
+  try {
+    const response = await api.get(url);
+    return response.data.artifacts.map(artifact => ({
+      id: artifact.id,
+      name: artifact.name,
+      created: artifact.created_at,
+      download_url: artifact.archive_download_url.replace('https://api.github.com', API_BASE_URL),
+    }));
+  } catch (error) {
+    console.error("Error getting artifacts:", error.response?.data || error.message);
+    throw new Error(`Failed to get artifacts: ${error.message}`);
+  }
 };
 
-/**
- * Get status and output of a workflow run.
- */
-export const getWorkflowRunStatus = async (runId) => {
-  const response = await axios.get(
-    `${API_BASE_URL}/repos/0xreyes/ip-tools/actions/runs/${runId}`
-  );
-  return response.data;
+export const getArtifactByDispatchId = async (dispatchId) => {
+  try {
+    const artifacts = await getArtifacts();
+    if (artifacts && artifacts.length > 0){
+      console.log('getArtifactByDispatchId',dispatchId, artifacts)
+      return artifacts.filter((artifact) => artifact.name.includes(dispatchId))
+    } else {
+      throw new Error(`Failed to fetch artifact`);
+    }
+  } catch (error) {
+    console.error("Error getting artifact by ID:", error);
+    throw new Error(`Failed to find artifact: ${error.message}`);
+  }
+};
+
+export const downloadArtifact = async (url) => {
+  try {
+    console.log(url);
+    const response = await api.get(url, {
+      responseType: 'arraybuffer',
+    });
+    
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(response.data);
+    const files = {};
+
+    await Promise.all(
+      Object.keys(zipContent.files).map(async filename => {
+        console.log(filename)
+        files[filename] = await zipContent.files[filename].async("string");
+      })
+    );
+    console.log('files', files)
+    return files;
+  } catch (error) {
+    console.error("Error downloading artifact:", error);
+    throw new Error(`Failed to download artifact: ${error.message}`);
+  }
 };
