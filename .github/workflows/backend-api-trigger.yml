@@ -21,9 +21,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # - name: Checkout repository
-      #   uses: actions/checkout@v4
-
       - name: Execute IP diagnostic tool
         run: |
           TOOL="${{ inputs.tool_command }}"
@@ -33,9 +30,9 @@ jobs:
 
           echo "Running $TOOL for $TARGET (Dispatch ID: $DISPATCH_ID)"
           mkdir -p .diagnostic_logs
-          
+
           echo "##[group]Run command output" > "$OUTPUT_FILE"
-          
+
           case "$TOOL" in
             dig)
               dig "$TARGET" >> "$OUTPUT_FILE"
@@ -44,20 +41,20 @@ jobs:
               nslookup "$TARGET" >> "$OUTPUT_FILE"
               ;;
             ping)
-              ping -c 2 -W 2 "$TARGET" >> "$OUTPUT_FILE"
+              ping -c 4 "$TARGET" >> "$OUTPUT_FILE"
               ;;
             whois)
               whois "$TARGET" >> "$OUTPUT_FILE"
               ;;
             traceroute)
-              traceroute "$TARGET" >> "$OUTPUT_FILE"
+              traceroute -w 1 -m 5 "$TARGET" >> "$OUTPUT_FILE"
               ;;
             *)
               echo "❌ Unsupported tool: $TOOL" >> "$OUTPUT_FILE"
               exit 1
               ;;
           esac
-          
+
           echo "##[endgroup]" >> "$OUTPUT_FILE"
           cat "$OUTPUT_FILE"
         continue-on-error: true
