@@ -23,6 +23,7 @@ jobs:
     steps:
       - name: Execute IP diagnostic tool
         run: |
+          sudo apt-get update && sudo apt-get install -y traceroute
           TOOL="${{ inputs.tool_command }}"
           TARGET="${{ inputs.target_host }}"
           DISPATCH_ID="${{ inputs.dispatch_id }}"
