@@ -21,9 +21,9 @@ jobs:
           password: ${{ secrets.TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v3
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: 0xreyex/ip-tools:network-tools
+          tags: 0xreyes/ip-tools:network-tools
