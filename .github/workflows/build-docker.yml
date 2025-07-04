@@ -28,6 +28,5 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
           push: true
-          tags: 0xreyes/ip-tools:v1
+          tags: ghcr.io/0xreyes/ip-tools:latest
