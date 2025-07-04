@@ -6,19 +6,19 @@ You can access the live application here: [https://0xreyes.github.io/ip-tools/](
 
 ## Core Capabilities
 
-* **Ping** - Swiftly assess host reachability and measure network latency. This confirms host online status and response efficiency.
+* **Ping**
 
-* **Traceroute** - Gain profound insight into the network path data traverses to a destination, detailing each hop and its associated latency. This offers a clear visualization of network routing.
+* **Traceroute** 
 
-* **Whois** - Retrieve essential domain registration information, including ownership and contact details.
+* **Whois** 
 
-* **Dig** - Execute advanced DNS lookups and queries for various record types (e.g., A, MX, NS). This is an invaluable tool for in-depth DNS analysis.
+* **Dig** 
 
-* **Netcat** (Upcoming) - Anticipate versatile network interaction capabilities.
+* **Netcat**
 
-* **Telnet** (Upcoming) - Future features will include direct connection testing.
+* **Telnet**
 
-* **Nmap** (Upcoming) - Comprehensive network scanning functionality is slated for integration.
+* **Nmap**
 
 
 Simply input a domain or IP address, select your desired tool, and receive precise results promptly.
