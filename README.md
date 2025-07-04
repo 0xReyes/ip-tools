@@ -37,10 +37,6 @@ The system operates through an efficient and secure process:
 
 5.  Finally, the application retrieves these artifacts and presents the results directly to you. This constitutes a streamlined and reliable workflow.
 
-## Getting Started
-
-To explore the application's capabilities, please follow these setup instructions.
-
 ### Environment Configuration
 
 Before launching the application, ensure the following environment variable is properly configured:
