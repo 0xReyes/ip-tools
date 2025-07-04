@@ -1,4 +1,4 @@
-# Network Tools: Your Essential Web Application
+# ip-tools
 
 neat designed to facilitate various network diagnostic checks directly from your web browser. It serves as a versatile toolkit, enabling tasks such as host reachability assessment, route tracing, domain information querying, and much more. 
 
@@ -81,8 +81,6 @@ Before launching the application, ensure the following environment variable is p
     The application should then open in your web browser, typically at `http://localhost:3000`.
 
 ### GitHub Integration Details
-
-This application leverages GitHub's robust infrastructure for its core operations.
 
 * **Repository:** `0xReyes/ip-tools`
 
