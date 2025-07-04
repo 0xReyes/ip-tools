@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tool_command:
-        description: 'IP diagnostic tool to run (dig, nslookup, ping, whois, traceroute)'
+        description: 'IP diagnostic tool to run (dig, nslookup, ping, whois, traceroute, nc, curl, telnet, nmap)'
         required: true
         type: string
       target_host:
@@ -40,27 +40,39 @@ jobs:
             echo "##[group]"
             case "$TOOL" in
               dig)
-                dig "$TARGET"
+                dig "$TARGET" 2>&1
                 ;;
               nslookup)
-                nslookup "$TARGET"
+                nslookup "$TARGET" 2>&1
                 ;;
               ping)
-                ping -c 4 "$TARGET"
+                ping -c 2 "$TARGET" 2>&1
                 ;;
               whois)
-                whois "$TARGET"
+                whois "$TARGET" 2>&1 | head -n 5
                 ;;
               traceroute)
-                traceroute -w 1 -m 5 "$TARGET"
+                traceroute -w 1 -m 5 "$TARGET" 2>&1
+                ;;
+              nc)
+                nc -zv "$TARGET" 80 2>&1
+                ;;
+              curl)
+                curl --connect-timeout 5 --max-time 10 -v "$TARGET" 2>&1
+                ;;
+              telnet)
+                telnet "$TARGET" 80 < /dev/null 2>&1
+                ;;
+              nmap)
+                nmap -F "$TARGET" 2>&1
                 ;;
               *)
-                echo "❌ Unsupported tool: $TOOL"
+                echo "❌ Unsupported tool: $TOOL" 2>&1
                 exit 1
                 ;;
             esac
             echo "##[endgroup]"
-          } | tee "$OUTPUT_FILE"
+          } | tee "$OUTPUT_FILE" 2>&1
         continue-on-error: true
 
       - name: Upload diagnostic result

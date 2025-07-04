@@ -1,8 +1,23 @@
-# Use the latest Ubuntu image as the base
-FROM ubuntu:latest
+FROM debian:bookworm-slim
 
-# Update package list and install traceroute and other tools
-RUN apt-get update && apt-get install -y traceroute dnsutils iputils-ping whois && apt-get clean
+# Install essential network diagnostic tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        dnsutils \
+        iputils-ping \
+        whois \
+        ca-certificates \
+        netcat-openbsd \
+        curl \
+        telnet \
+        nmap \
+        traceroute && \
+    # Clean up package manager artifacts
+    rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/apt/* \
+        /usr/share/doc/* \
+        /usr/share/man/*
 
-# Set a default command (optional, can be overridden in workflow)
-CMD ["/bin/bash"]
+# Create working directory
+WORKDIR /app
