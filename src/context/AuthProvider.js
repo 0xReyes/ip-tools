@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
       // Automatically attempt login without user interaction
       handleAutoLogin();
     }
-  }, [loading, isAuthenticated]);
+  }, [handleAutoLogin, loading, isAuthenticated]);
 
   const handleAutoLogin = async () => {
     try {
