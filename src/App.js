@@ -1,503 +1,434 @@
-import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
-import { 
-  Layout, Card, Row, Col, Input, Button, Select, Typography, Spin, Alert, message, ConfigProvider
-} from 'antd';
-import { 
-  RadarChartOutlined, DeploymentUnitOutlined, 
-  GlobalOutlined, DatabaseOutlined, 
-  CopyOutlined, PlayCircleFilled, LoadingOutlined
-} from '@ant-design/icons';
-import { 
-  triggerWorkflowdispatch, 
-  getArtifactByDispatchId,
-  downloadArtifact
-} from './service/api';
-import { Footer } from 'antd/es/layout/layout';
-import { ResponsiveContext, ResponsiveProvider } from './context/ResponsiveProvider';
-import { AuthProvider } from './context/AuthProvider';
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Button,
+  Input,
+  Tag,
+  Table,
+  Space,
+  Typography,
+  Card,
+  Row,
+  Col,
+  Layout,
+  Spin,
+  Modal,
+  Form,
+  message,
+  Divider,
+} from "antd";
+
+import {
+  SearchOutlined,
+  EnvironmentOutlined,
+  ClockCircleOutlined,
+  ReloadOutlined,
+  LinkOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  ApartmentOutlined,
+  GlobalOutlined,
+} from "@ant-design/icons";
+
+import { AuthProvider, useAuth } from "./context/AuthProvider.js";
 
 const { Header, Content } = Layout;
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
+const { TextArea } = Input;
 
-const TOOLS = [
-  { id: 'ping', icon: <RadarChartOutlined />, name: 'Ping' },
-  { id: 'traceroute', icon: <DeploymentUnitOutlined />, name: 'Traceroute' },
-  { id: 'whois', icon: <GlobalOutlined />, name: 'Whois' },
-  { id: 'dig', icon: <DatabaseOutlined />, name: 'Dig' },
-];
+// --- Helper for consistent styling ---
+const theme = {
+  primaryColor: "#4A90E2",
+  textColor: "#333",
+  textSecondaryColor: "#666",
+  backgroundColor: "#f7f9fc",
+  cardShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  borderRadius: "12px",
+};
 
-// Connection Loading Component
-const ConnectionLoader = () => {
+// --- Modal Component ---
+const CoverLetterModal = ({ visible, onClose, job, onSave, initialData }) => {
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (visible) {
+      initialData ? form.setFieldsValue(initialData) : form.resetFields();
+    }
+  }, [visible, initialData, form]);
+
+  const handleSave = () => {
+    form
+      .validateFields()
+      .then((values) => {
+        onSave(job.id, values);
+        onClose();
+        message.success("Application notes saved!");
+      })
+      .catch((error) => console.error("Form validation failed:", error));
+  };
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(240, 242, 245, 0.95)',
-      zIndex: 9999,
-      backdropFilter: 'blur(4px)'
-    }}>
-      <div style={{
-        textAlign: 'center',
-        padding: '40px',
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-        maxWidth: '400px',
-        width: '90%'
-      }}>
-        <DeploymentUnitOutlined style={{ 
-          fontSize: '48px', 
-          color: '#1890ff', 
-          marginBottom: '24px',
-          display: 'block'
-        }} />
-        
-        <Title level={3} style={{ 
-          margin: '0 0 16px 0', 
-          color: '#333',
-          fontSize: '24px'
-        }}>
-          Network Tools
+    <Modal
+      title={
+        <Title level={4} style={{ margin: 0 }}>
+          Notes for {job?.title} at {job?.company}
         </Title>
-        
-        <Spin 
-          indicator={<LoadingOutlined style={{ fontSize: 32, color: '#1890ff' }} spin />}
-          size="large"
-        />
-        
-        <div style={{ marginTop: '24px' }}>
-          <Text style={{ 
-            fontSize: '16px', 
-            color: '#666',
-            display: 'block',
-            marginBottom: '8px'
-          }}>
-            Establishing connection...
-          </Text>
-          <Text style={{ 
-            fontSize: '14px', 
-            color: '#999'
-          }}>
-            Please wait while we initialize the network diagnostic tools
-          </Text>
-        </div>
-      </div>
-    </div>
+      }
+      open={visible}
+      onCancel={onClose}
+      footer={[
+        <Button key="back" onClick={onClose}>
+          Cancel
+        </Button>,
+        <Button key="submit" type="primary" onClick={handleSave}>
+          Save
+        </Button>,
+      ]}
+      width={700}
+    >
+      <Form form={form} layout="vertical">
+        <Form.Item name="coverLetter" label="Cover Letter Snippets">
+          <TextArea
+            rows={6}
+            placeholder="Jot down key points for your cover letter..."
+          />
+        </Form.Item>
+        <Form.Item name="notes" label="General Notes">
+          <TextArea
+            rows={3}
+            placeholder="Salary expectations, follow-up dates, contacts, etc."
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 };
 
-function App() {
-  const { getResponsiveValue, getResponsiveFontSize } = useContext(ResponsiveContext);
-  const [activeTool, setActiveTool] = useState('ping');
-  const [artifacts, setArtifacts] = useState({});
-  const [isConnected, setIsConnected] = useState(false);
-
-  const [state, setState] = useState({
-    target: '',
-    isLoading: false,
-    error: null,
-    output: null,
-    dispatchId: null
-  });
-  
-  const { target, isLoading, error, output, dispatchId } = state;
-
-  // Simulate connection establishment
-  useEffect(() => {
-    const establishConnection = async () => {
-      try {
-        // Simulate connection delay (you can replace this with actual connection logic)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // You can add actual connection logic here, such as:
-        // - API health check
-        // - Authentication verification
-        // - WebSocket connection
-        // - Service availability check
-        
-        // For now, we'll just simulate a successful connection
-        setIsConnected(true);
-      } catch (error) {
-        console.error('Connection failed:', error);
-        // Handle connection error
-        setTimeout(() => establishConnection(), 3000); // Retry after 3 seconds
-      }
-    };
-
-    establishConnection();
-  }, []);
-
-  const resetJobState = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      isLoading: false,
-      error: null,
-      output: null,
-      dispatchId: null
-    }));
-  }, []);
-
-  const fetchData = useCallback(async () => {
-    if (!dispatchId || dispatchId.length === 0) return;
-
-    try {
-      const response = await getArtifactByDispatchId(dispatchId);
-
-      if (response.length > 0){
-        const { download_url } = response[0];
-        const files = await downloadArtifact(download_url);
-        if (files[`${dispatchId}.txt`]){
-          const content = files[`${dispatchId}.txt`];
-          setState(prev => ({...prev, output: content}));
-          setArtifacts(prev => ({...prev, [`${activeTool}-${target}`]: content}));
-        }
-      }
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        error: error.message
-      }));
-    } finally {
-      setState(prev => ({
-        ...prev,
-        isLoading: false
-      }));
-    }
-  },[dispatchId, activeTool, target]);
-
-  useEffect(() => {
-    if (dispatchId?.length > 0 && !output){
-      const timer = setTimeout(() => {
-        fetchData()
-      }, 30000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [dispatchId, output, fetchData]);
-
-  useEffect(() => {
-    resetJobState()
-  }, [activeTool, resetJobState]);
-
-  const runDiagnostic = useCallback(async () => {
-    if (!target) {
-      message.error('Please enter a target host or IP.');
-      return;
-    }
-    
-    try {
-      resetJobState();
-      setState(prev => ({ ...prev, isLoading: true }));
-      
-      const cacheKey = `${activeTool}-${target}`;
-      if (artifacts[cacheKey]) {
-        setState(prev => ({
-          ...prev,
-          output: artifacts[cacheKey],
-          isLoading: false
-        }));
-        message.info('Results loaded from cache.');
-        return;
-      }
-
-      const newDispatchId = await triggerWorkflowdispatch(activeTool, target);
-      setState(prev => ({
-        ...prev,
-        dispatchId: newDispatchId,
-        isLoading: true
-      }));
-      message.info('Diagnostic started...');
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err.message,
-        isLoading: false
-      }));
-      message.error(`Failed to start diagnostic: ${err.message}`);
-    }
-  }, [activeTool, target, artifacts, resetJobState]);
-
-  const renderResults = useMemo(() => {
-    if (!output && !isLoading && !error) {
-      return (
-        <Card
-          style={{ margin: `${getResponsiveValue(16)}px 0`, borderRadius: 8, boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
-        >
-          <div style={{ textAlign: 'center', padding: getResponsiveValue(24) }}>
-            <Text type="secondary" style={{ fontSize: getResponsiveFontSize(16), lineHeight: 1.5 }}>
-              Enter a target and select a tool to run your first diagnostic!
-              <br />Results will appear here.
-            </Text>
-          </div>
-        </Card>
-      );
-    }
-    
-    return (
-      <Card
-        title={output ? `${activeTool.toUpperCase()} Results for ${target}` : "Diagnostic Results"}
-        extra={output && <Button icon={<CopyOutlined />} onClick={() =>
-          navigator.clipboard.writeText(output).then(() => message.success('Copied to clipboard!'))
-        }>Copy</Button>}
-        style={{ margin: `${getResponsiveValue(16)}px 0`, borderRadius: 8, boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
-      >
-        {error ? (
-          <Alert
-            message="Diagnostic Failed"
-            description={error}
-            type="error"
-            showIcon
-          />
-        ) : (
-          <>
-            {isLoading && (
-              <div style={{ textAlign: 'center', padding: getResponsiveValue(16) }}>
-                <Spin spinning={true} tip="Running diagnostic..." size="large">
-                  <div style={{ minHeight: getResponsiveValue(100) }} />
-                </Spin>
-              </div>
-            )}
-            {output && (
-              <pre style={{
-                background: '#f6f8fa',
-                padding: getResponsiveValue(16),
-                borderRadius: 4,
-                maxHeight: getResponsiveValue(400),
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace',
-                fontSize: getResponsiveFontSize(14),
-                lineHeight: 1.4
-              }}>
-                <code>{output}</code>
-              </pre>
-            )}
-          </>
-        )}
-      </Card>
-    );
-  }, [output, isLoading, error, activeTool, target, getResponsiveValue, getResponsiveFontSize]);
-
-  const customTheme = {
-    token: {
-      colorPrimary: '#1890ff',
-      colorInfo: '#1890ff',
-      colorSuccess: '#52c41a',
-      colorWarning: '#faad14',
-      colorError: '#f5222d',
-      colorTextBase: '#333',
-      colorTextSecondary: '#666',
-      borderRadius: 8,
-      fontFamily: 'Inter, sans-serif',
-      fontSize: parseFloat(getResponsiveFontSize(14)),
-    },
-    components: {
-      Layout: {
-        headerBg: 'linear-gradient(to right, #001529, #002f5c)',
-        footerBg: 'linear-gradient(to right, #001529, #002f5c)',
-      },
-      Button: {
-        borderRadius: 8,
-        controlHeight: getResponsiveValue(50, 0.05),
-        fontSize: parseFloat(getResponsiveFontSize(16)),
-        fontWeight: 600,
-      },
-      Input: {
-        controlHeight: getResponsiveValue(50, 0.05),
-        borderRadius: 8,
-        fontSize: parseFloat(getResponsiveFontSize(16)),
-      },
-      Select: {
-        controlHeight: getResponsiveValue(50, 0.05),
-        borderRadius: 8,
-        fontSize: parseFloat(getResponsiveFontSize(16)),
-      },
-      Card: {
-        headerBg: '#ffffff',
-        extraColor: '#1890ff',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-      },
-      Tabs: {
-        inkBarColor: '#1890ff',
-        itemSelectedColor: '#1890ff',
-        itemHoverColor: '#40a9ff',
-      },
-      Typography: {
-        fontSizeHeading3: parseFloat(getResponsiveFontSize(28)),
-        fontSizeHeading4: parseFloat(getResponsiveFontSize(22)),
-        fontSizeLG: parseFloat(getResponsiveFontSize(18)),
-        fontSizeSM: parseFloat(getResponsiveFontSize(14)),
-      }
-    },
-  };
-
-  // Show connection loader until connected
-  if (!isConnected) {
-    return <ConnectionLoader />;
-  }
+// --- Header Component ---
+const AppHeader = ({ onRefresh, isRefreshing }) => {
+  const { isAuthenticated, logout } = useAuth();
 
   return (
-    <ConfigProvider theme={customTheme}>
-      <Layout style={{ minHeight: '100vh', backgroundColor: '#f0f2f5' }}>
-        <Header style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: `0 ${getResponsiveValue(24)}px`,
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          background: customTheme.components.Layout.headerBg
-        }}>
-          <DeploymentUnitOutlined style={{ fontSize: getResponsiveValue(28), color: 'white', marginRight: getResponsiveValue(16) }} />
-          <Title level={3} style={{ color: 'white', margin: 0, fontSize: getResponsiveFontSize(28), letterSpacing: '0.5px' }}>Network Tools</Title>
-        </Header>
+    <Header
+      style={{
+        background: "#fff",
+        padding: "0 24px",
+        borderBottom: "1px solid #e8e8e8",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      <Title level={3} style={{ margin: 0, color: theme.primaryColor }}>
+        <ApartmentOutlined style={{ marginRight: 8 }} />
+        engineers4hire
+      </Title>
+      <Space>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={onRefresh}
+          loading={isRefreshing}
+        >
+          Refresh
+        </Button>
+        {isAuthenticated && (
+          <Button danger onClick={logout}>
+            Logout
+          </Button>
+        )}
+      </Space>
+    </Header>
+  );
+};
 
-        <Content style={{ padding: `${getResponsiveValue(24)}px`, maxWidth: '1000px', margin: `${getResponsiveValue(24)}px auto`, width: '100%' }}>
-          <Card
-            title={<Title level={4} style={{ margin: 0, fontSize: getResponsiveFontSize(22) }}>Run Network Diagnostic</Title>}
-            style={{ marginBottom: getResponsiveValue(24), borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+// --- Main App Component ---
+function App() {
+  const { isAuthenticated, loading, login, getJobData } = useAuth();
+
+  const [jobs, setJobs] = useState([]);
+  const [filteredJobs, setFilteredJobs] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [applicationData, setApplicationData] = useState({});
+
+  const loadJobs = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const response = await getJobData();
+      const rawData = response.data;
+
+      if (Array.isArray(rawData)) {
+        const transformedData = rawData.map((item, index) => ({
+          id: item.link || index,
+          company: item.company_name || "N/A",
+          title: item.title,
+          location: "Remote",
+          posted: item.date_fetched,
+          source: item.source
+            ? new URL(item.link).hostname.replace("www.", "")
+            : "Unknown",
+          link: item.link,
+          snippet: item.snippet,
+        }));
+        setJobs(transformedData);
+        setFilteredJobs(transformedData);
+      } else {
+        setJobs([]);
+        setFilteredJobs([]);
+      }
+    } catch (error) {
+      console.error("Error loading jobs:", error);
+      message.error("Failed to load jobs.");
+      setJobs([]);
+      setFilteredJobs([]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [getJobData]);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
+
+  useEffect(() => {
+    const searchTerm = search.toLowerCase().trim();
+    if (!searchTerm) {
+      setFilteredJobs(jobs);
+      return;
+    }
+    const filtered = jobs.filter(
+      (job) =>
+        job.title?.toLowerCase().includes(searchTerm) ||
+        job.company?.toLowerCase().includes(searchTerm) ||
+        job.snippet?.toLowerCase().includes(searchTerm)
+    );
+    setFilteredJobs(filtered);
+  }, [search, jobs]);
+
+  const handleEditApplication = useCallback((job) => {
+    setSelectedJob(job);
+    setModalVisible(true);
+  }, []);
+
+  const handleSaveApplication = useCallback((jobId, data) => {
+    setApplicationData((prev) => ({ ...prev, [jobId]: data }));
+  }, []);
+
+  const columns = [
+    {
+      title: "Role",
+      dataIndex: "title",
+      key: "role",
+      render: (text, record) => (
+        <div>
+          <Title
+            level={5}
+            style={{
+              marginBottom: "4px",
+              color: theme.textColor,
+              fontWeight: 500,
+            }}
           >
-            <Text type="secondary" style={{ marginBottom: getResponsiveValue(24), fontSize: getResponsiveFontSize(14), lineHeight: 1.6 }}>
-              Select a network diagnostic tool from the dropdown below and enter a target host or IP address (e.g., <code>google.com</code> or <code>8.8.8.8</code>). Click "Run Diagnostic" to initiate the test and view the results.
-            </Text>
-            <Row gutter={[getResponsiveValue(16), getResponsiveValue(16)]} align="middle">
-              <Col xs={24} md={12}>
-                <Text strong style={{ fontSize: getResponsiveFontSize(16) }}>Select Tool:</Text>
-                <Select
-                  value={activeTool}
-                  onChange={setActiveTool}
-                  style={{ width: '100%', marginTop: getResponsiveValue(8) }}
-                  size="large"
-                  disabled={isLoading}
-                >
-                  {TOOLS.map(tool => (
-                    <Select.Option key={tool.id} value={tool.id}>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        {React.cloneElement(tool.icon, { style: { fontSize: getResponsiveFontSize(22), marginRight: getResponsiveValue(8) } })}
-                        <Text style={{ fontSize: getResponsiveFontSize(16) }}>{tool.name}</Text>
-                      </div>
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Col>
-              <Col xs={24} md={12}>
-                <Text strong style={{ fontSize: getResponsiveFontSize(16) }}>Target Host or IP:</Text>
-                <Input
-                  placeholder="e.g., google.com or 8.8.8.8"
-                  value={target}
-                  onChange={e => setState(prev => ({ ...prev, target: e.target.value }))}
-                  onPressEnter={runDiagnostic}
-                  style={{ width: '100%', marginTop: getResponsiveValue(8) }}
-                  size="large"
-                  disabled={isLoading}
-                />
-              </Col>
-              <Col xs={24}>
-                <Button
-                  type="primary"
-                  icon={<PlayCircleFilled />}
-                  onClick={runDiagnostic}
-                  loading={isLoading}
-                  disabled={!target}
-                  size="large"
-                  block
-                  style={{ height: getResponsiveValue(50, 0.05) }}
-                >
-                  Run Diagnostic
-                </Button>
-              </Col>
-            </Row>
-
-            {artifacts[`${activeTool}-${target}`] && !isLoading && !output && !error && (
-              <Alert
-                message="Cached results available."
-                description="Results for this query are available from a previous run. Click 'Run Diagnostic' to load them instantly."
-                type="info"
-                showIcon
-                style={{ marginTop: getResponsiveValue(16), borderRadius: 8 }}
-              />
-            )}
-          </Card>
-
-          {error && (
-            <Alert
-              message="Operation Error"
-              description={error}
-              type="error"
-              showIcon
-              closable
-              onClose={() => setState(prev => ({ ...prev, error: null }))}
-              style={{ borderRadius: 8, marginBottom: getResponsiveValue(24) }}
-            />
-          )}
-
-          {renderResults}
-
-          <div style={{ marginTop: getResponsiveValue(32) }}>
-            <Title level={4} style={{ marginBottom: getResponsiveValue(16), textAlign: 'center', fontSize: getResponsiveFontSize(22) }}>Explore Other Tools</Title>
-            <Row gutter={[getResponsiveValue(16), getResponsiveValue(16)]}>
-              {TOOLS.map(tool => (
-                <Col xs={12} sm={8} md={6} key={tool.id}>
-                  <Card
-                    hoverable
-                    onClick={() => !isLoading && setActiveTool(tool.id)}
-                    style={{
-                      textAlign: 'center',
-                      cursor: 'pointer',
-                      borderRadius: 8,
-                      height: '100%',
-                      padding: getResponsiveValue(16),
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                      transition: 'all 0.3s ease',
-                      border: '1px solid #e8e8e8'
-                    }}
-                    bodyStyle={{ padding: 0 }}
-                  >
-                    <div style={{
-                      fontSize: getResponsiveFontSize(40),
-                      marginBottom: getResponsiveValue(8),
-                      color: customTheme.token.colorPrimary,
-                      lineHeight: 1
-                    }}>
-                      {React.cloneElement(tool.icon, { style: { fontSize: getResponsiveFontSize(40) } })}
-                    </div>
-                    <Text strong style={{ fontSize: getResponsiveFontSize(16), display: 'block', marginTop: getResponsiveValue(8) }}>{tool.name}</Text>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          </div>
-        </Content>
-        <Footer style={{
-          textAlign: 'center',
-          background: customTheme.components.Layout.footerBg,
-          padding: `${getResponsiveValue(16)}px ${getResponsiveValue(24)}px`,
-          borderTop: '1px solid #e8e8e8',
-          color: 'white'
-        }}>
-          <Text style={{ color: 'white', fontSize: getResponsiveFontSize(14) }}>
-            Network Diagnostics Tool ©{new Date().getFullYear()}
+            {record.title}
+          </Title>
+          <Text type="secondary">{record.company}</Text>
+        </div>
+      ),
+    },
+    {
+      title: "Details",
+      key: "details",
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          <Text>
+            <EnvironmentOutlined
+              style={{ color: theme.textSecondaryColor, marginRight: "8px" }}
+            />{" "}
+            {record.location}
           </Text>
-        </Footer>
-      </Layout>
-    </ConfigProvider>
+          <Text type="secondary">
+            <ClockCircleOutlined style={{ marginRight: "8px" }} />{" "}
+            {record.posted}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: "Source",
+      dataIndex: "source",
+      key: "source",
+      render: (source) => (
+        <Tag icon={<GlobalOutlined />} color="cyan">
+          {source}
+        </Tag>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      align: "right",
+      render: (_, record) => {
+        const hasNotes = !!applicationData[record.id];
+        return (
+          <Space>
+            <Button
+              icon={hasNotes ? <FileTextOutlined /> : <EditOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditApplication(record);
+              }}
+            >
+              {hasNotes ? "View Notes" : "Add Notes"}
+            </Button>
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(record.link, "_blank");
+              }}
+            >
+              Apply
+            </Button>
+          </Space>
+        );
+      },
+    },
+  ];
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div style={{ textAlign: "center", padding: "100px 0" }}>
+          <Spin size="large" />
+          <Title level={5} type="secondary" style={{ marginTop: "20px" }}>
+            Loading Application...
+          </Title>
+        </div>
+      );
+    }
+
+    if (!isAuthenticated) {
+      return (
+        <Row
+          justify="center"
+          align="middle"
+          style={{ minHeight: "calc(100vh - 65px)" }}
+        >
+          <Col>
+            <Card
+              style={{
+                width: 350,
+                textAlign: "center",
+                boxShadow: theme.cardShadow,
+                borderRadius: theme.borderRadius,
+              }}
+            >
+              <Title level={3}>Welcome</Title>
+              <Text type="secondary">Please log in to view job listings.</Text>
+              <Divider />
+              <Button type="primary" size="large" onClick={login} block>
+                Login with Google
+              </Button>
+            </Card>
+          </Col>
+        </Row>
+      );
+    }
+
+    return (
+      <Content
+        style={{
+          padding: "24px",
+          maxWidth: "1200px",
+          margin: "0 auto",
+          width: "100%",
+        }}
+      >
+        <Card
+          style={{
+            marginBottom: "24px",
+            borderRadius: theme.borderRadius,
+            boxShadow: theme.cardShadow,
+          }}
+        >
+          <Input
+            size="large"
+            placeholder="Search by role, company, or keyword..."
+            prefix={<SearchOutlined style={{ color: "#aaa" }} />}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ borderRadius: "8px" }}
+            allowClear
+          />
+        </Card>
+
+        <Card
+          style={{
+            borderRadius: theme.borderRadius,
+            boxShadow: theme.cardShadow,
+            overflowX: "auto",
+          }}
+        >
+          <Title level={4} style={{ marginBottom: 20 }}>
+            Open Positions ({filteredJobs.length})
+          </Title>
+          <Table
+            columns={columns}
+            dataSource={filteredJobs}
+            rowKey="id"
+            loading={isRefreshing}
+            pagination={{
+              pageSize: 15,
+              showSizeChanger: false,
+              simple: true,
+              position: ["bottomCenter"],
+            }}
+            expandable={{
+              expandedRowRender: (record) => (
+                <Paragraph
+                  type="secondary"
+                  style={{ margin: 0, padding: "8px 16px" }}
+                >
+                  {record.snippet}
+                </Paragraph>
+              ),
+              rowExpandable: (record) => record.snippet,
+            }}
+            onRow={(record) => ({
+              onClick: () => handleEditApplication(record),
+              style: { cursor: "pointer" },
+            })}
+            rowClassName={() => "table-row-hover"}
+          />
+        </Card>
+
+        {selectedJob && (
+          <CoverLetterModal
+            visible={modalVisible}
+            onClose={() => setModalVisible(false)}
+            job={selectedJob}
+            onSave={handleSaveApplication}
+            initialData={applicationData[selectedJob.id]}
+          />
+        )}
+      </Content>
+    );
+  };
+
+  return (
+    <Layout style={{ minHeight: "100vh", background: theme.backgroundColor }}>
+      <AppHeader onRefresh={loadJobs} isRefreshing={isRefreshing} />
+      {renderContent()}
+    </Layout>
   );
 }
 
 export default function AppWrapper() {
   return (
     <AuthProvider>
-      <ResponsiveProvider>
-        <App />
-      </ResponsiveProvider>
+      <App />
     </AuthProvider>
   );
 }
