@@ -3,47 +3,54 @@ import axios from "axios";
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 
-const API_BASE_URL = (window.API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL ||
-  "https://github-utils-api.onrender.com");
+const DEFAULT_API_BASE_URL = "https://github-utils-api.onrender.com";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || DEFAULT_API_BASE_URL;
+
+// Expose for debugging in the browser (optional)
+window.API_BASE_URL = API_BASE_URL;
+
 const OWNER = "0xReyes";
 const REPO = "ip-tools";
 const WORKFLOW_FILENAME = "backend-api-trigger.yml";
 
-// Main API instance for GitHub operations
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+  Accept: "application/vnd.github.v3+json",
+};
+
+// Main API instance (used for downloads / raw axios calls)
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    Accept: "application/vnd.github.v3+json",
-  },
+  headers: { Accept: "application/vnd.github.v3+json" },
+  withCredentials: true,
 });
 
-// Auth API instance for authentication operations
+// Auth API instance
 const authApi = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // Include cookies for authentication
-  headers: {
-    "Content-Type": "application/json",
-  },
+  withCredentials: true,
+  headers: { "Content-Type": "application/json" },
 });
 
-// Authentication functions
+// -------------------------
+// Auth
+// -------------------------
 export const login = async () => {
   try {
     const response = await authApi.post("/auth/login");
 
-    if (response.status === 200 && response.data.success) {
+    if (response.status === 200 && response.data?.success) {
       return {
         success: true,
         token: response.data.token,
         message: response.data.message,
       };
-    } else {
-      return {
-        success: false,
-        error: response.data.message || "Authentication failed",
-      };
     }
+
+    return {
+      success: false,
+      error: response.data?.message || "Authentication failed",
+    };
   } catch (error) {
     console.error("Login error:", error);
     return {
@@ -59,29 +66,30 @@ export const login = async () => {
 export const verifyAuth = async () => {
   try {
     const response = await authApi.get("/auth/verify");
-    return response.status === 200 && response.data.success;
+    return response.status === 200 && !!response.data?.success;
   } catch (error) {
     console.error("Auth verification error:", error);
     return false;
   }
 };
 
-export const logout = async () => {
-  return { success: true };
-};
+// Placeholder (no backend endpoint yet)
+export const logout = async () => ({ success: true });
 
-// Authenticated fetch function for protected resources
+// -------------------------
+// Helpers
+// -------------------------
 export const authenticatedFetch = async (url, options = {}) => {
-  try {
-    const fetchOptions = {
-      ...options,
-      credentials: "include", // Include cookies
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    };
+  const fetchOptions = {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...JSON_HEADERS,
+      ...(options.headers || {}),
+    },
+  };
 
+  try {
     const response = await fetch(url, fetchOptions);
 
     if (response.status === 401) {
@@ -95,11 +103,14 @@ export const authenticatedFetch = async (url, options = {}) => {
   }
 };
 
-// Fetch job data with authentication
+// -------------------------
+// Data
+// -------------------------
 export const fetchJobData = async () => {
   try {
+    // NOTE: this is a proxy path your backend serves, not a direct GitHub URL.
     const jobDataUrl = `${API_BASE_URL}/raw.githubusercontent.com/0xReyes/job-data-warehouse/feature/test/data/jobs_data.json`;
-    const response = await authenticatedFetch(jobDataUrl);
+    const response = await authenticatedFetch(jobDataUrl, { method: "GET" });
 
     if (!response.ok) {
       throw new Error(
@@ -108,41 +119,32 @@ export const fetchJobData = async () => {
     }
 
     const jobData = await response.json();
-    return {
-      success: true,
-      data: jobData,
-    };
+    return { success: true, data: jobData };
   } catch (error) {
     console.error("Job data fetch error:", error);
-    return {
-      success: false,
-      error: error.message,
-    };
+    return { success: false, error: error.message };
   }
 };
 
-// Add request interceptor to include auth token if available
+// -------------------------
+// Axios interceptors
+// -------------------------
 api.interceptors.request.use(
   (config) => {
-    // Cookies are automatically included due to withCredentials: true
-    // But you can also add Bearer token if needed
     const token = localStorage.getItem("auth_token");
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Add response interceptor to handle auth errors for main API
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Handle auth failure
       localStorage.removeItem("auth_token");
       console.log("Authentication failed or expired");
     }
@@ -150,41 +152,63 @@ api.interceptors.response.use(
   }
 );
 
-// Existing GitHub API functions
+// -------------------------
+// GitHub Actions / Artifacts
+// -------------------------
 export const triggerWorkflowdispatch = async (tool, target) => {
-  const dispatch_id = uuidv4();
+  const dispatchId = uuidv4();
+
   const payload = {
     ref: "main",
     inputs: {
       tool_command: tool,
       target_host: target,
-      dispatch_id,
+      dispatch_id: dispatchId,
     },
   };
 
-  const url = `/api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILENAME}/dispatches`;
+  const url = `${API_BASE_URL}/api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILENAME}/dispatches`;
 
   try {
-    const response = await api.post(url, payload);
-    if (response.status !== 204) {
-      throw new Error(`Unexpected response status: ${response.status}`);
+    const response = await authenticatedFetch(url, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to trigger workflow: ${response.status} ${response.statusText}`
+      );
     }
-    console.log("dispatch_id", dispatch_id);
-    return dispatch_id;
+
+    console.log("dispatch_id", dispatchId);
+    return dispatchId;
   } catch (error) {
-    console.error(
-      "Error triggering workflow:",
-      error.response?.data || error.message
-    );
-    throw new Error(`Failed to trigger workflow: ${error.message}`);
+    console.error("Error triggering workflow:", error?.message || error);
+    throw error;
   }
 };
 
 export const getArtifacts = async () => {
-  const url = `/api.github.com/repos/${OWNER}/${REPO}/actions/artifacts`;
+  const url = `${API_BASE_URL}/api.github.com/repos/${OWNER}/${REPO}/actions/artifacts`;
+
   try {
-    const response = await api.get(url);
-    return response.data.artifacts.map((artifact) => ({
+    const response = await authenticatedFetch(url, {
+      method: "GET",
+      headers: { Accept: "application/vnd.github.v3+json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to get artifacts: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+    const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
+
+    return artifacts.map((artifact) => ({
       id: artifact.id,
       name: artifact.name,
       created: artifact.created_at,
@@ -194,47 +218,30 @@ export const getArtifacts = async () => {
       ),
     }));
   } catch (error) {
-    console.error(
-      "Error getting artifacts:",
-      error.response?.data || error.message
-    );
-    throw new Error(`Failed to get artifacts: ${error.message}`);
+    console.error("Error getting artifacts:", error?.message || error);
+    throw error;
   }
 };
 
 export const getArtifactByDispatchId = async (dispatchId) => {
-  try {
-    const artifacts = await getArtifacts();
-    if (artifacts && artifacts.length > 0) {
-      console.log("getArtifactByDispatchId", dispatchId, artifacts);
-      return artifacts.filter((artifact) => artifact.name.includes(dispatchId));
-    } else {
-      throw new Error(`Failed to fetch artifact`);
-    }
-  } catch (error) {
-    console.error("Error getting artifact by ID:", error);
-    throw new Error(`Failed to find artifact: ${error.message}`);
-  }
+  const artifacts = await getArtifacts();
+  return artifacts.filter((artifact) => artifact.name?.includes(dispatchId));
 };
 
 export const downloadArtifact = async (url) => {
   try {
-    console.log(url);
-    const response = await api.get(url, {
-      responseType: "arraybuffer",
-    });
+    const response = await api.get(url, { responseType: "arraybuffer" });
 
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(response.data);
-    const files = {};
 
+    const files = {};
     await Promise.all(
       Object.keys(zipContent.files).map(async (filename) => {
-        console.log(filename);
         files[filename] = await zipContent.files[filename].async("string");
       })
     );
-    console.log("files", files);
+
     return files;
   } catch (error) {
     console.error("Error downloading artifact:", error);
