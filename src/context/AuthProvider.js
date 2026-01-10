@@ -1,20 +1,13 @@
-// AuthContext.js
-import React, { createContext, useContext, useState, useEffect } from "react";
-import {
-  login as apiLogin,
-  verifyAuth,
-  fetchJobData,
-  authenticatedFetch,
-} from "../service/api";
+// src/context/AuthProvider.js
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { login as apiLogin, verifyAuth, fetchJobData, authenticatedFetch } from "../service/api";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  return ctx;
 };
 
 export const AuthProvider = ({ children }) => {
@@ -23,145 +16,92 @@ export const AuthProvider = ({ children }) => {
   const [authToken, setAuthToken] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
-  const handleAutoLogin = async () => {
+  // ✅ memoized + defined BEFORE useEffect
+  const handleAutoLogin = useCallback(async () => {
     try {
       const result = await apiLogin();
-      if (result.success) {
+      if (result?.success) {
         setAuthToken(result.token);
         setIsAuthenticated(true);
+        setShowLoginModal(false);
         localStorage.setItem("auth_token", result.token);
-        console.log("Auto-login successful");
       } else {
-        console.error("Auto-login failed:", result.error);
-        // Keep trying periodically if auto-login fails
-        setTimeout(handleAutoLogin, 5000); // Retry every 5 seconds
+        setShowLoginModal(true);
       }
-    } catch (error) {
-      console.error("Auto-login error:", error);
-      // Keep trying periodically if auto-login fails
-      setTimeout(handleAutoLogin, 5000); // Retry every 5 seconds
+    } catch (err) {
+      console.error("Auto-login error:", err);
+      setShowLoginModal(true);
     }
-  };
+  }, []);
 
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     try {
-      // First, check if we have a stored token
       const storedToken = localStorage.getItem("auth_token");
-      if (storedToken) {
-        setAuthToken(storedToken);
-        console.log("Found stored token, verifying with backend...");
-      }
+      if (storedToken) setAuthToken(storedToken);
 
       const isAuth = await verifyAuth();
-      console.log("Auth status:", isAuth);
-
       if (isAuth) {
         setIsAuthenticated(true);
-        // If we didn't have the token in state but backend says we're auth'd,
-        // we might be relying on cookies
-        if (!storedToken) {
-          console.log("Authenticated via cookies");
-        }
       } else {
-        // Not authenticated - clean up any stale tokens
         setIsAuthenticated(false);
         setAuthToken(null);
         localStorage.removeItem("auth_token");
-        console.log("Not authenticated - cleaned up tokens");
       }
-    } catch (error) {
-      console.error("Auth check failed:", error);
-      // On error, assume not authenticated and clean up
+    } catch (err) {
+      console.error("Auth check failed:", err);
       setIsAuthenticated(false);
       setAuthToken(null);
       localStorage.removeItem("auth_token");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      void handleAutoLogin();
+    }
+  }, [handleAutoLogin, loading, isAuthenticated]);
 
   const login = async () => {
     try {
       const result = await apiLogin();
-
-      if (result.success) {
+      if (result?.success) {
         setAuthToken(result.token);
         setIsAuthenticated(true);
-        setShowLoginModal(false); // Hide modal on successful login
-        // Store token in localStorage as fallback for axios interceptor
+        setShowLoginModal(false);
         localStorage.setItem("auth_token", result.token);
         return { success: true, message: result.message };
-      } else {
-        return { success: false, error: result.error };
       }
-    } catch (error) {
-      console.error("Login failed:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: result?.error || "Login failed" };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   };
 
   const logout = () => {
     setIsAuthenticated(false);
     setAuthToken(null);
-    setShowLoginModal(true); // Show modal immediately after logout
-    // Clear any stored tokens
+    setShowLoginModal(true);
     localStorage.removeItem("auth_token");
   };
 
-  // Use the authenticatedFetch from API service
   const makeAuthenticatedRequest = async (url, options = {}) => {
-    try {
-      const response = await authenticatedFetch(url, options);
-
-      // If we get 401, user session expired
-      if (response.status === 401) {
-        setIsAuthenticated(false);
-        setAuthToken(null);
-        localStorage.removeItem("auth_token");
-        throw new Error("Session expired. Please login again.");
-      }
-
-      return response;
-    } catch (error) {
-      // Handle session expiry
-      if (
-        error.message.includes("Authentication required") ||
-        error.message.includes("session expired")
-      ) {
-        setIsAuthenticated(false);
-        setAuthToken(null);
-        localStorage.removeItem("auth_token");
-      }
-      throw error;
+    const response = await authenticatedFetch(url, options);
+    if (response.status === 401) {
+      setIsAuthenticated(false);
+      setAuthToken(null);
+      localStorage.removeItem("auth_token");
+      throw new Error("Session expired. Please login again.");
     }
+    return response;
   };
 
-  // Convenient method to fetch job data
-  const getJobData = async () => {
-    try {
-      const result = await fetchJobData();
-      return result;
-    } catch (error) {
-      // Handle auth errors
-      if (error.message.includes("Authentication required")) {
-        setIsAuthenticated(false);
-        setAuthToken(null);
-      }
-      throw error;
-    }
-  };
-  // Check if user is already authenticated on app load
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  // Show login modal if not authenticated and not loading
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      // Automatically attempt login without user interaction
-      handleAutoLogin();
-    }
-  }, [handleAutoLogin, loading, isAuthenticated]);
+  const getJobData = async () => fetchJobData();
 
   const value = {
     isAuthenticated,
