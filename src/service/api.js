@@ -37,7 +37,7 @@ const authApi = axios.create({
 // -------------------------
 export const login = async () => {
   try {
-    const response = await authApi.post("/auth/login");
+    const response = await authApi.post(`${API_BASE_URL}/auth/login`);
 
     if (response.status === 200 && response.data?.success) {
       return {
@@ -65,7 +65,7 @@ export const login = async () => {
 
 export const verifyAuth = async () => {
   try {
-    const response = await authApi.get("/auth/verify");
+    const response = await authApi.post(`${API_BASE_URL}/auth/verify`);
     return response.status === 200 && !!response.data?.success;
   } catch (error) {
     console.error("Auth verification error:", error);
