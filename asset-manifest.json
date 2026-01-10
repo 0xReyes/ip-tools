@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/ip-tools/static/css/main.e6c13ad2.css",
-    "main.js": "/ip-tools/static/js/main.d458617b.js",
+    "main.js": "/ip-tools/static/js/main.7d52a9c4.js",
     "static/js/453.d46af4d8.chunk.js": "/ip-tools/static/js/453.d46af4d8.chunk.js",
     "index.html": "/ip-tools/index.html",
     "main.e6c13ad2.css.map": "/ip-tools/static/css/main.e6c13ad2.css.map",
-    "main.d458617b.js.map": "/ip-tools/static/js/main.d458617b.js.map",
+    "main.7d52a9c4.js.map": "/ip-tools/static/js/main.7d52a9c4.js.map",
     "453.d46af4d8.chunk.js.map": "/ip-tools/static/js/453.d46af4d8.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.e6c13ad2.css",
-    "static/js/main.d458617b.js"
+    "static/js/main.7d52a9c4.js"
   ]
 }
