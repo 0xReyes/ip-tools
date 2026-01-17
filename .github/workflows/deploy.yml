@@ -24,7 +24,7 @@ jobs:
       - name: Build React app
         run: npm run build
         env:
-            REACT_APP_API_BASE_URL: 'https://github-utils-api.onrender.com/api.github.com'
+          REACT_APP_API_BASE_URL: 'https://github-utils-api.onrender.com'
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
